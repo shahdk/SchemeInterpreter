@@ -1,0 +1,43 @@
+(define-syntax return-first
+  (syntax-rules ()
+    ((_ expr expr1 ...)
+       (begin expr1 ... expr))))
+
+----------------------------------------------------------------------------------------
+ (block-exp
+    (id (lambda (v) (or ((list-of symbol?) v) (null? v))))
+    (body (list-of expression?)))
+  (super-exp
+    (num number?)
+    (var symbol?))
+
+---------------------------------------------------------------------------------------
+ ['block
+          (if (null? (cadr datum))
+              (block-exp '() (map parse-expression (cddr datum)))
+              (block-exp (cadr datum) (map parse-expression (cddr datum))))]
+         ['super
+          (letrec ([loop (lambda (datum len)
+                           (if (and (not (atom? (cadr datum))) (equal? 'super (caadr datum)))
+                               (loop (cadr datum) (+ len 1))
+                               (super-exp len (cadr datum))))])
+            (loop datum 1))]
+
+----------------------------------------------------------------------------------------
+[block-exp (id body)
+        ((cons 'block (list id)) (map unparse-expression body))]
+      [super-exp (num var)
+        '()]
+
+--------------------------------------------------------------------------------------
+ [block-exp (id body)
+        (let* ([vals (null-list (length id) '())]
+               [env1 (if (null? vals) '() (extend-env id vals env))])
+            (letrec ([loop (lambda (body)
+                             (if (null? (cdr body))
+                                 (eval-expression (car body) (if (null? env1) env env1))
+                                 (begin (eval-expression (car body) (if (null? env1) env env1)) (loop (cdr body)))))])
+              (loop body)))]
+      [super-exp (num var)
+        (apply-super-env num var env)]
+--------------------------------------------------------------------------------------------

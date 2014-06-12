@@ -1,0 +1,318 @@
+(define eval-one-exp
+  (lambda (exp)
+    (let* ([parse-tree (parse-expression exp)]
+           [expanded-tree (expand-syntax parse-tree)]
+           [result (top-level-eval expanded-tree)])
+      result)))
+
+(define top-level-eval
+  (lambda (form)
+    (case (car form)
+	   [define-exp 
+	     (extend-global-env (cadr form) (eval-expression (caddr form) (empty-env)))]
+	   [else (eval-expression form (empty-env))])))
+
+(define expand-syntax
+  (lambda (exp)
+    (case (car exp)
+      [(lambda-exp)
+        (list 'lambda-exp (cadr exp) (expand-syntax (caddr exp)))]
+      [app-exp (list 'app-exp (expand-syntax (cadr exp)) (map expand-syntax (caddr exp)))]
+      [if-exp  (list 'if-exp (expand-syntax (cadr exp)) (expand-syntax (caddr exp)) (expand-syntax (car (cdddr exp))))]
+      [set!-exp (list 'set!-exp (cadr exp) (expand-syntax (caddr exp)))]
+      [letrec-exp (list 'letrec-exp (cadr exp) (map expand-syntax (caddr exp)) (expand-syntax (car (cdddr exp))))]
+      [let-exp (list 'app-exp (list 'lambda-exp (cadr exp) (expand-syntax (car (cdddr exp)))) (map expand-syntax (caddr exp)))]
+      [named-let-exp (expand-syntax (list 'app-exp (list 'letrec-exp (list (cadr exp)) (list (list 'lambda-exp (caddr exp) (cadr (cdddr exp)))) (list 'var-exp (cadr exp))) (car (cdddr exp))))]
+      [let*-exp 
+        (cond
+          [(and (null? (cadr exp)) (null? (caddr exp))) (expand-syntax (car (cdddr exp)))]
+          [else (list 'app-exp (list 'lambda-exp (list (car (cadr exp)))
+                           (expand-syntax (list 'let*-exp (cdr (cadr exp)) (cdr (caddr exp)) (car (cdddr exp)))))
+                  (list (expand-syntax (car (caddr exp)))))])]
+      [begin-exp (list 'begin-exp (map expand-syntax (cadr exp)))]
+      [define-exp (list 'define-exp (cadr exp) (expand-syntax (caddr exp)))]
+      [and-exp 
+        (if (null? (cadr exp))
+            (list 'lit-exp '#t)
+            (if (null? (cdr (cadr exp)))
+                (expand-syntax (car (cadr exp)))
+                (expand-syntax (list 'if-exp (car (cadr exp)) (list 'and-exp (cdr (cadr exp))) (list 'lit-exp '#f)))))]
+      [or-exp 
+        (if (null? (cadr exp))
+            (list 'lit-exp '#f)
+            (if (null? (cdr (cadr exp)))
+                (expand-syntax (car (cadr exp)))
+                (expand-syntax (list 'let-exp (cons 'sys-var (list 'tempVal)) (list (car (cadr exp)))
+                                 (list 'if-exp (list 'var-exp (cons 'sys-var (list 'tempVal))) 
+                                   (list 'var-exp (cons 'sys-var (list 'tempVal)))
+                                   (list 'or-exp (cdr (cadr exp))))))))]
+      [cond-exp 
+        (cond 
+          [(null? (cadr exp)) '()]
+          [else (expand-syntax (list 'if-exp (caar (cadr exp)) (cadar (cadr exp))
+                                 (list 'cond-exp (cdr (cadr exp)))))])]
+      [case-exp (key clauses)
+        (let ([case-key (expand-syntax (cadr exp))])
+          (cond 
+            [(null? (caddr exp)) '()]
+            [else (expand-syntax (list 'if-exp (list 'or-exp (map (lambda (ls)
+                                                        (list 'app-exp (list 'var-exp 'equal?) (list ls case-key))) (caar (caddr exp))))
+                                   (cadar (caddr exp))
+                                   (list 'case-exp (cadr exp) (cdr (caddr exp)))))]))]
+      [else exp])))
+
+
+(define eval-expression
+  (lambda (exp env)
+    (case (car exp)
+      [var-exp (apply-env env (cadr exp))]
+      [lit-exp (cadr exp)]
+      [lambda-exp (make-closure (cadr exp) (caddr exp) env)]
+      [app-exp
+        (let* ([procedure (eval-expression (cadr exp) env)]
+               [arg (map (lambda (operand) (eval-expression operand env)) (caddr exp))])
+              (apply-proc procedure arg env))]
+      [if-exp
+        (if (eval-expression (cadr exp) env)
+            (eval-expression (caddr exp) env)
+            (if (not (null? (cdddr exp)))
+                (eval-expression (car (cdddr exp)) env)
+                '()))]
+      [set!-exp
+        (change-env env (cadr exp) (eval-expression (caddr exp) env))]
+	  
+      [letrec-exp
+        (cond
+          [else (let* ([vals (map (lambda (v) (eval-expression v env)) (caddr exp))]
+                       [letrec-env (extend-env-recur (cadr exp) vals env)])
+                 	(eval-expression (car (cdddr exp)) letrec-env))])]
+
+      [begin-exp
+        (letrec ([eval-begin (lambda (exprs)
+                               (cond
+                                 [(null? exprs) '()]
+                                 [(null? (cdr exprs)) (eval-expression (car exprs) env)]
+                                 [else (begin (eval-expression (car exprs) env) (eval-begin (cdr exprs)))]))])
+          (eval-begin (cadr exp)))]
+      [while-exp
+        (letrec ([loop (lambda ()
+                         (if (eval-expression (cadr exp) env)
+                             (begin (eval-expression (caddr exp) env) (loop))))])
+		    (loop))]
+      [define-exp
+        (if (null? env)
+            (extend-global-env (cadr exp) (eval-expression (caddr exp) (empty-env)))
+            (add-to-env (cadr exp) (eval-expression (caddr exp) env) env))]          
+      [else '()])))
+		
+
+
+(define null-list
+  (lambda (len accum)
+    (cond 
+      [(= len 0) accum]
+      [else (null-list (- len 1) (append accum (list '#f)))]))) 
+
+(define procedure?
+	(lambda (proc)
+		(case (car proc)
+			[closure-record (and ((lambda (id) (or ((list-of symbol?) id) (symbol? id) (pair? id))) (cadr proc))
+								 (expression? (caddr proc)) (environment? (car (cdddr proc))))]
+			[primitive (symbol? (cadr proc))]
+			[else #f])))
+      
+(define make-closure
+  (lambda (id body env)
+    (list 'closure-record id body env)))
+	
+(define apply-proc
+  (lambda (proc arg env)
+    (case (car proc)
+      [closure-record
+        (eval-expression (caddr proc) (extend-env (cadr proc) arg env))]
+      [primitive
+        (apply-primitive-proc (cadr proc) arg)]
+	  [else '()])))
+
+(define list-of-numbers?
+  (lambda (ls)
+    (cond
+      [(null? ls) #t]
+      [(null? (car ls)) #f]
+      [else (and (list-of-numbers? (cdr ls)) (number? (car ls)))])))
+
+(define apply-primitive-proc
+  (lambda (id arg)
+        (case id
+          [(+) (cond
+                 [(null? (cdr arg)) (+ 0 (car arg))]
+                 [else (apply + arg)])]
+          [(-) (cond
+                 [(null? (cdr arg)) (- 0 (car arg))]
+                 [else (apply - arg)])]
+          [(*) (cond
+                 [(null? (cdr arg)) (* 1 (car arg))]
+                 [else (apply * arg)])]
+          [(/) (cond
+                 [(null? (cdr arg)) (/ 1 (car arg))]
+                 [else (apply / arg)])]
+          [(add1) (add1 (car arg))]
+          [(sub1) (sub1 (car arg))]
+          [(zero?) (zero? (car arg))]
+          [(not) (not (car arg))]
+          [(=) (apply = arg)]
+          [(<) (apply < arg)]
+          [(>) (apply > arg)]
+          [(<=) (apply <= arg)]
+          [(>=) (apply >= arg)]
+          [(cons) (cons (car arg) (cadr arg))]
+          [(list)  arg]
+          [(null?) (null? (car arg))]
+          [(eq?) (eq? (car arg) (cadr arg))]
+          [(equal?) (equal? (car arg) (cadr arg))]
+          [(atom?) (atom? (car arg))]
+          [(length) (length (car arg))]
+          [(list->vector) (list->vector (car arg))]
+          [(list?) (list? (car arg))]
+          [(pair?) (pair? (car arg))]
+          [(procedure?) (procedure? (car arg))]
+          [(vector->list) (vector->list (car arg))]
+          [(vector) (apply vector arg)]
+          [(make-vector) (apply make-vector arg)]
+          [(vector-ref) (vector-ref (car arg) (cadr arg))]
+          [(vector?) (vector? (car arg))]
+          [(number?) (number? (car arg))]
+          [(symbol?) (symbol? (car arg))]
+          [(set-car!) (set-car! (car arg) (cadr arg))]
+          [(set-cdr!) (set-cdr! (car arg) (cadr arg))]
+          [(vector-set!) (vector-set! (car arg) (cadr arg) (caddr arg))]
+          [(car) (car (car arg))]
+          [(cdr) (cdr (car arg))]
+          [(caar) (caar (car arg))]
+          [(cadr) (cadr (car arg))]
+          [(cdar) (cdar (car arg))]
+          [(cddr) (cddr (car arg))]
+          [(caaar) (caaar (car arg))]
+          [(caadr) (caadr (car arg))]
+          [(cadar) (cadar (car arg))]
+          [(cdaar) (cdaar (car arg))]
+          [(cdddr) (cdddr (car arg))]
+          [(cddar) (cddar (car arg))]
+          [(cdadr) (cdadr (car arg))]
+          [(caddr) (caddr (car arg))]
+          [(map) (map (lambda (args)
+                                (apply-proc (car arg) args  global-env)) (index-recur (cdr arg)))]
+          [(apply) (apply-proc (car arg) (combine-arg (cdr arg)) global-env)]
+          [(assq) (assq (car arg) (cadr arg))]
+          [(assv) (assv (car arg) (cadr arg))]
+          [(append) (let f ([ls '()] [args arg])
+                              (if (null? args)
+                                  ls
+                                  (let g ([ls ls])
+                                    (if (null? ls)
+                                        (f (car args) (cdr args))
+                                        (cons (car ls) (g (cdr ls)))))))]
+          [(max) (apply max arg)]
+		  [(load) (let ([p (open-input-file (car arg))])
+						(let f ([x (read p)])
+							(if (eof-object? x)
+								(begin (close-port p) '())
+								(begin (eval-one-exp x) (f (read p))))))]
+          [else '()])))
+
+(define combine-arg
+  (lambda (ls)
+    (cond 
+      [(null? ls) '()]
+      [(list? (car ls)) (append  (car ls) (combine-arg (cdr ls)))]
+      [else (append (list (car ls)) (combine-arg (cdr ls)))])))
+
+(define index-recur
+  (lambda (ls)
+    (if (null? (cdr ls)) 
+        (letrec ([loop (lambda (ls accum)
+                         (if (null? ls) accum
+                             (loop (cdr ls) (append accum (list (list (car ls)))))))])
+          (loop (car ls) '()))
+        (let ([size (- (length (car ls)) 1)])
+          (letrec ([index-recur-helper (lambda (count)
+                                        	(cond [(eq? count size) (list (index-value count ls))]
+                                        			[else (append (list (index-value count ls)) (index-recur-helper (+ count 1)))]))])
+            (index-recur-helper 0))))))
+                                                                           
+                                
+(define index-value
+  (lambda (index ls)
+    (letrec ([index-helper (lambda (index ls accum count)
+                             (cond 
+                               [(null? ls) accum]
+                               [(list? (car ls)) (index-helper index (cdr ls) (append accum (list (index-helper index (car ls) '() 0))) count)]
+                               [else (if (eq? index count)
+                                         (car ls)
+                                         (index-helper index (cdr ls) '() (+ count 1)))]))])
+      (index-helper index ls '() 0))))
+
+
+(define primitive-proc
+  (list '+ '- '* '/ 'add1 'sub1 'max
+    'zero? 'not '= '< '> '<= '>= 
+    'cons 'list 'null? 'eq? 'equal? 
+    'atom? 'length 'list->vector 'list? 
+    'pair? 'procedure? 'vector->list 'vector 
+    'make-vector 'vector-ref 'vector? 'number? 
+    'symbol? 'set-car! 'set-cdr! 'vector-set!
+    'car 'cdr 'caar 'cadr 'cdar 'cddr 'caaar 'load
+    'caadr 'cadar 'cdaar 'cdddr 'cddar 'cdadr 'caddr 'map 'apply 'assq 'assv 'append))
+
+(define global-env
+  (map (lambda (name) (cons name (list (list 'primitive name)))) primitive-proc))
+
+(define reset-global-env
+  (lambda ()
+    (set! global-env (map (lambda (name) (cons name (list (list 'primitive name)))) primitive-proc))))
+	
+(define extend-env-recur
+  (lambda (syms vals env)
+    (let* ([vec (list->vector vals)]
+	   [new-env (cons (cons syms vec) env)]
+	   [pos-list (make-indices (- (length vals) 1) '())])
+	   (letrec ([loop (trace-lambda lod (item pos)
+						(if (procedure? (car item))
+								(begin (vector-set! vec
+												    pos
+													(case (caar item)
+														[closure-record
+															(list 'closure-record (caadr item) (car (caddr item)) new-env)]
+														[primitive
+															item]
+														[else '()])) (loop (cdr vals) (cdr pos-list)))))])
+		(loop vals pos-list))
+      new-env)))
+
+(define letrec-check
+  (lambda (s1 s2)
+    (cond
+      [(null? s1) #f]
+      [(letrec-check-helper (cons 'var-exp (list (car s1))) s2) #t]
+      [else (letrec-check (cdr s1) s2)])))
+
+(define letrec-check-helper
+  (lambda (el ls)
+    (cond
+      [(or (atom? ls) (null? ls)) #f]
+      [(equal? (car ls) 'lambda-exp)  #f]
+      [(equal? (car ls) 'letrec-exp) (if (letrec-check-helper el (caddr ls)) 
+                                         #t
+                                         (if (letrec-check-helper el (cadddr ls))
+                                             (not (contains? (cadr el) (cadr ls)))
+                                             #f))]
+      [(equal? el (car ls)) #t]
+      [(null? (cdr ls)) (letrec-check-helper el (car ls))]
+      [else (letrec-check-helper el (cdr ls))])))
+
+(define contains?
+  (lambda (el ls)
+    (cond
+      [(null? ls) #f]
+      [(equal? el (car ls)) #t]
+      [else (contains? el (cdr ls))])))

@@ -1,0 +1,108 @@
+(define test-rotate
+  (lambda ()
+    (and
+      (equal? (rotate (quote ())) '())
+      (equal? (rotate (quote (a))) '(a))
+      (equal? (rotate (quote (a b))) '(b a))
+      (equal? (rotate (quote (a b c))) '(c a b))
+      (equal? (rotate (rotate (quote (a b c d)))) '(c d a b)))))
+
+(define test-make-list-c
+  (lambda ()
+    (and
+      (equal? ((make-list-c 3) 'xyz) '(xyz xyz xyz))
+      (equal? ((make-list-c 0) 'xyz) '())
+      (equal? ((make-list-c 4) ((make-list-c 5) '(a))) '(((a) (a) (a) (a) (a)) ((a) (a) (a) (a) (a)) ((a) (a) (a) (a) (a)) ((a) (a) (a) (a) (a)))))))
+
+(define test-filter-out
+  (lambda ()
+    (and
+      (equal? ((filter-out number?) '(a b 2 c 3 4 e)) '(a b c e))
+      (equal? ((filter-out number?) '()) '())
+      (equal? ((filter-out (lambda (item) (eq? item 3))) '(a b 3 2 4 3 d)) '(a b 2 4 d))
+      (equal? ((filter-out number?) '(a b c e)) '(a b c e)))))
+
+(define test-substitute-all-m
+  (lambda ()
+    (and
+      (equal? ((substitute-all-m 3 7) '(1 11 3 2 9 3 7)) '(1 11 7 2 9 7 7))
+      (equal? ((substitute-all-m 3 7) '(1 ((2) (11 3) 9) ((3) 7))) '(1 ((2) (11 7) 9) ((7) 7)))
+      (equal? ((substitute-all-m 3 3) '(1 ((2) (11 3) 9) ((3) 7))) '(1 ((2) (11 3) 9) ((3) 7)))
+      (equal? ((substitute-all-m 3 7) '(())) '(()))
+      (equal? ((substitute-all-m '(2 3) 7) '(1 ((2 3) (11 (2 3)) 9) (2 3 7))) '(1 (7 (11 7) 9) (2 3 7))))))
+
+(define rl
+  (lambda () 
+    (load "3.ss")))
+
+(define rl-test
+  (lambda () 
+    (load "3-test.ss")))
+
+(define test-pascal-triangle
+  (lambda ()
+    (and
+      (equal? (pascal-triangle 0) '((1)))
+      (equal? (pascal-triangle 1) '((1 1) (1)))
+      (equal? (pascal-triangle 7) '((1 7 21 35 35 21 7 1) (1 6 15 20 15 6 1) (1 5 10 10 5 1) (1 4 6 4 1) (1 3 3 1) (1 2 1) (1 1) (1)))
+      (equal? (pascal-triangle 4) '((1 4 6 4 1) (1 3 3 1) (1 2 1) (1 1) (1))))))
+
+(define test-minimize-interval-list
+  (lambda ()
+    (and
+      (equal? (minimize-interval-list (quote ((1 4) (2 10) (3 5) (3 4) (3 7)))) '((1 10)))
+      (equal? (minimize-interval-list (quote ((1 4) (2 5) (6 8)))) '((1 5) (6 8)))
+      (equal? (minimize-interval-list (quote ((1 2) (2 3)))) '((1 3)))
+      (equal? (minimize-interval-list (quote ((1 2) (1 3) (1 4) (2 5) (1 3) (1 4) (1 2) (1 3)))) '((1 5)))
+      (equal? (minimize-interval-list (quote ((1 2) (4 5) (7 10)))) '((1 2) (4 5) (7 10)))
+      (equal? (minimize-interval-list (quote ((1 2) (4 5) (5 6) (6 7) (7 8) (8 9) (9 10)))) '((1 2) (4 10)))
+      (equal? (minimize-interval-list (quote ((1 4)))) '((1 4))))))
+
+
+(define test-complete
+  (lambda ()
+    (and
+      (equal? (complete (quote ())) '())
+      (equal? (complete (quote (a))) '((a ())))
+      (equal? (complete (quote (a b))) '((a (b))(b (a))))
+      (equal? (complete (quote (a b c))) '((a (b c))(b (a c))(c (a b))))
+      (equal? (complete (quote (a b c d))) '((a (b c d))(b (a c d))(c (a b d))(d (a b c)))))))
+
+
+(define test-complete?
+  (lambda ()
+    (and
+      (equal? (complete? (quote ())) #t)
+      (equal? (complete? (quote ((a (b)) (a (a)) (b (a))))) #f)
+      (equal? (complete? (quote ((a (b)) (b (a))))) #t)
+      (equal? (complete? (quote ((a (b c)) (b (a c)) (c (a b))))) #t)
+      (equal? (complete? (complete (quote (a b c)))) #t)
+      (equal? (complete? (quote ((a (b c)) (b (a)) (c (a b))))) #f)
+      (equal? (complete? (quote ((a (b c)) (b (a c d)) (c (a b))))) #f)
+      (equal? (complete? (quote ((a (b c)) (b (a c)) (d (a b)) (c (a b))))) #f))))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,48 @@
+;;Dharmin Shah 4
+
+;;Problem 1
+(define snlist-recur
+  (lambda (initial atom-proc pair-proc)
+    (letrec ([recur-helper (lambda (ls)
+                             (if (null? ls)
+                                 initial
+                                 (let ([temp (car ls)])
+                                   (if (atom? temp)
+                                       (atom-proc temp (recur-helper (cdr ls)))
+                                       (pair-proc (recur-helper temp) (recur-helper (cdr ls)))))))])
+      recur-helper)))
+
+;;Problem 2
+(define sn-list-sum
+  (lambda (ls)
+    ((snlist-recur 0 (lambda (x y) (if (null? x)
+                                       (+ 0 y)
+                                       (+ x y))) +) ls)))
+
+;;Problem 3
+(define sn-list-map
+  (lambda (proc ls)
+      ((snlist-recur '() (lambda (x y) (cons (proc  x) y)) cons) ls)))
+
+;;Problem 4
+(define paren-count
+  (lambda (ls)
+    ((snlist-recur 2 (lambda (x y) (if (null? x)
+                                       (+ 2 y)
+                                       y)) (lambda (x y) (+ x y))) ls)))
+
+;;Problem 5
+(define sn-list-reverse
+  (lambda (ls)
+    ((snlist-recur '() (lambda (x y) (append y (list x))) (lambda (x y) (append y (list x)))) ls)))
+
+;;Problem 6
+(define sn-list-occur
+  (lambda (el ls)
+    ((snlist-recur 0 (lambda (x y) (if (equal? el x)
+                                       (+ y 1)
+                                       (+ y 0))) +) ls)))
+;;Problem 7
+(define depth
+  (lambda (ls)
+    ((snlist-recur 1 (lambda (x y) (max 1 y)) (lambda (x y) (max (+ 1 x) (+ 1 y)))) ls)))

@@ -1,0 +1,473 @@
+;;Dharmin Shah and Brian Padilla
+
+(define eval-one-exp
+  (lambda (exp)
+    (let* ([parse-tree (parse-expression exp)]
+           [expanded-tree (expand-syntax parse-tree)]
+           [result (top-level-eval expanded-tree (halt-cont))])
+      result)))
+
+(define top-level-eval
+  (lambda (form cont)
+    (cases expression form
+	   [define-exp (sym val)
+	     (eval-expression val (extend-global-env-cont sym cont) (empty-env))]
+	   [else (eval-expression form cont (empty-env))])))
+	   
+(define-datatype procedure procedure?
+  [closure-record
+    (id (lambda (id) (or ((list-of symbol?) id) (symbol? id) (pair? id))))
+    (body expression?)
+    (env environment?)]
+  [primitive
+    (id symbol?)]
+  [acontinuation 
+    (cont continuation?)])
+      
+(define make-closure
+  (lambda (id body env)
+    (closure-record id body env)))
+
+(define expand-syntax
+  (lambda (exp)
+    (cases expression exp
+      [lambda-exp (id body)
+        (lambda-exp id (expand-syntax body))]
+      [app-exp (exprs)
+        (app-exp (map expand-syntax exprs))]
+      [if-exp (condition if-true if-false)
+        (if-exp (expand-syntax condition) (expand-syntax if-true) (expand-syntax if-false))]
+      [set!-exp (variable value)
+        (set!-exp variable (expand-syntax value))]
+      [letrec-exp (symbols values body)
+		(letrec-exp symbols (map expand-syntax values) (expand-syntax body))]
+      [let-exp (symbols values body)
+        (app-exp (cons (lambda-exp  symbols (expand-syntax body)) (map expand-syntax values)))]
+      [named-let-exp (name symbols values body)
+        (expand-syntax (app-exp (cons (letrec-exp (list name) (list (lambda-exp symbols body)) (var-exp name)) values)))]
+      [let*-exp (symbols values body)
+        (cond
+          [(and (null? symbols) (null? values)) (expand-syntax body)]
+          [else (app-exp (cons (lambda-exp (list (car symbols))
+                           (expand-syntax (let*-exp (cdr symbols) (cdr values) body)))
+                  (list (expand-syntax (car values)))))])]
+      [begin-exp (expressions)
+        (begin-exp (map expand-syntax expressions))]
+      [define-exp (name body)
+        (define-exp name (expand-syntax body))]
+      [and-exp (body)
+        (if (null? body)
+            (lit-exp #t)
+            (if (null? (cdr body))
+                (expand-syntax (car body))
+                (expand-syntax (if-exp (car body) (and-exp (cdr body)) (lit-exp #f)))))]
+      [or-exp (body)
+        (if (null? body)
+            (lit-exp #f)
+            (if (null? (cdr body))
+                (expand-syntax (car body))
+                (expand-syntax (let-exp (cons 'sys-var (list 'tempVal)) (list (car body))
+                                 (if-exp (var-exp (cons 'sys-var (list 'tempVal))) 
+                                   (var-exp (cons 'sys-var (list 'tempVal)))
+                                   (or-exp (cdr body)))))))]
+      [cond-exp (conditions) 
+        (cond 
+          [(null? conditions) (null-exp)]
+          [else (expand-syntax (if-exp (caar conditions) (cadar conditions)
+                                 (cond-exp (cdr conditions))))])]                                 
+      [case-exp (key clauses)
+        (let ([case-key (expand-syntax key)])
+          (cond 
+            [(null? clauses) (null-exp)]
+            [else (expand-syntax (if-exp (or-exp (map (lambda (ls)
+                                                        (app-exp (var-exp 'equal?) (list ls case-key))) (caar clauses)))
+                                   (cadar clauses)
+                                   (case-exp key (cdr clauses))))]))]
+      [call/cc-exp (receiver)
+        (call/cc-exp (expand-syntax receiver))]
+      [else exp])))
+
+(define eval-expression
+  (lambda (exp cont env)
+    (cases expression exp
+      [var-exp (id) (apply-cont cont (apply-env env id))]
+      [lit-exp (val) (apply-cont cont val)]
+      [null-exp () (apply-cont cont '())]
+      [lambda-exp (id body) (apply-cont cont (make-closure id body env))]
+      [app-exp (exprs)
+        (eval-exps exprs (proc-cont cont) env)]
+      [if-exp (condition if-true if-false)
+        (eval-expression condition 
+          (if-cont if-true if-false cont env)
+          env)]
+      [set!-exp (variable value)
+        (eval-expression value (set!-cont env variable cont) env)]  
+      [letrec-exp (symbols values body)
+        (letrec-map-cps (lambda (v k) (eval-expression v k env)) values '() (letrec-cont symbols body cont env))]
+      [begin-exp (expressions)
+        (eval-begin-cps expressions cont env)]
+      [while-exp (condition body)
+        (while-cps condition body cont env)]
+      [define-exp (name body)
+        (if (null? env)
+            (eval-expression body (extend-global-env-cont name cont) (empty-env))
+            (eval-expression body (add-to-env-cont name env cont) env))]
+      [call/cc-exp (receiver)
+        (eval-expression receiver (call/cc-cont cont) env)]
+      [else
+        (apply-cont (error-cont) (format "Error in eval-expression: Not a syntax ~s" exp))])))
+      
+(define letrec-map-cps
+  (lambda (proc ls accum k)
+    (if (null? ls)
+        (apply-cont k accum)
+        (proc (car ls) (letrec-map-cont (cdr ls) proc accum k)))))
+    
+(define while-cps
+  (lambda (condition body cont env)
+        (eval-expression condition (while-cont condition body cont env) env)))
+
+(define eval-begin-cps
+  (lambda (exprs cont env)
+    (if (null? exprs)
+        (void)
+        (if (null? (cdr exprs))
+            (eval-expression (car exprs) cont env)
+            (eval-expression (car exprs) (eval-begin-cont (cdr exprs) cont env) env)))))
+		
+(define eval-exps
+  (lambda (exps cont env)
+    (if (null? exps)
+	(apply-cont cont '())
+	(eval-expression (car exps) (eval-exps-cont (cdr exps) env cont) env))))
+
+(define null-list
+  (lambda (len accum)
+    (cond 
+      [(= len 0) accum]
+      [else (null-list (- len 1) (append accum (list '#f)))]))) 
+
+
+(define apply-proc
+  (lambda (proc arg cont)
+    (cases procedure proc
+      [closure-record (id body env)
+        (eval-expression body cont (extend-env id arg env))]
+      [primitive (id)
+        (apply-primitive-proc id arg cont)]
+      [acontinuation (cont)
+        (apply-cont cont (car arg))])))
+
+(define list-of-numbers?
+  (lambda (ls)
+    (cond
+      [(null? ls) #t]
+      [(null? (car ls)) #f]
+      [else (and (list-of-numbers? (cdr ls)) (number? (car ls)))])))
+
+(define apply-primitive-proc
+  (lambda (id arg cont)
+    (if (and (null? arg) (not (equal? id 'append)) (not (equal? id 'exit)))
+        (apply-cont (error-cont) (format "Error in apply-primitive-proc Missing procedure body"))
+        (case id
+          [(+) (cond
+                 [(null? (cdr arg)) (+ 0 (car arg))]
+                 [(not (list-of-numbers? arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Invalid arguments ~s in #<primitive procedure +>" arg))]
+                 [else (apply-cont cont (apply + arg))])]
+          [(-) (cond
+                 [(null? (cdr arg)) (- 0 (car arg))]
+                 [(not (list-of-numbers? arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Invalid arguments ~s in #<primitive procedure ->" arg))]
+                 [else (apply-cont cont (apply - arg))])]
+          [(*) (cond
+                 [(null? (cdr arg)) (* 1 (car arg))]
+                 [(not (list-of-numbers? arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Invalid arguments ~s in #<primitive procedure *>" arg))]
+                 [else (apply-cont cont (apply * arg))])]
+          [(/) (cond
+                 [(null? (cdr arg)) (/ 1 (car arg))]
+                 [(not (list-of-numbers? arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Invalid arguments ~s in #<primitive procedure />" arg))]
+                 [(zero? (cadr arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc You created a black hole by dividing with 0"))]
+                 [else (apply-cont cont (apply / arg))])]
+          [(add1) (cond
+                    [(or (not (number? (car arg))) (null? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s Not a number in #<primitive procedure add1>" (car arg)))]
+                    [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure add1>" arg))]
+                    [else (apply-cont cont (add1 (car arg)))])]
+          [(sub1) (cond
+                    [(or (not (number? (car arg))) (null? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc () Not a number in #<primitive procedure sub1>"))]
+                    [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure sub1>" arg))]
+                    [else (apply-cont cont (sub1 (car arg)))])]
+          [(zero?) (cond
+                     [(or (not (number? (car arg))) (null? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc () Not a number in #<primitive procedure zero?>"))]
+                     [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure zero?>" arg))]
+                     [else (apply-cont cont (zero? (car arg)))])]
+          [(not) (cond
+                   [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure not>" arg))]
+                   [else (apply-cont cont (not (car arg)))])]
+          [(=) (cond
+                 [(null? (cdr arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure =>" arg))]
+                 [(not (list-of-numbers? arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Invalid arguments ~s in #<primitive procedure =>" arg))]
+                 [else (apply-cont cont (apply = arg))])]
+          [(<) (cond
+                 [(null? (cdr arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure <>" arg))]
+                 [(not (list-of-numbers? arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Invalid arguments ~s in #<primitive procedure <>" arg))]
+                 [else (apply-cont cont (apply < arg))])]
+          [(>) (cond
+                 [(null? (cdr arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure >>" arg))]
+                 [(not (list-of-numbers? arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Invalid arguments ~s in #<primitive procedure >>" arg))]
+                 [else (apply-cont cont (apply > arg))])]
+          [(<=) (cond
+                  [(null? (cdr arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure <=>" arg))]
+                  [(not (list-of-numbers? arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Invalid arguments ~s in #<primitive procedure <=>" arg))]
+                  [else (apply-cont cont (apply <= arg))])]
+          [(>=) (cond
+                  [(null? (cdr arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure >=>" arg))]
+                  [(not (list-of-numbers? arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Invalid arguments ~s in #<primitive procedure >=>" arg))]
+                  [else (apply-cont cont (apply >= arg))])]
+          [(cons) (cond 
+                    [(or (not (null? (cddr arg))) (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure cons>" arg))]
+                    [else (apply-cont cont (cons (car arg) (cadr arg)))])]
+          [(list)  (apply-cont cont arg)]
+          [(null?) (cond
+                     [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure null?>" arg))]
+                     [else (apply-cont cont (null? (car arg)))])]
+          [(eq?) (cond
+                   [(or (not (null? (cddr arg))) (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure eq?>" arg))]
+                   [else (apply-cont cont (eq? (car arg) (cadr arg)))])]
+          [(equal?) (cond
+                      [(or (not (null? (cddr arg))) (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure eq?>" arg))]
+                      [else (apply-cont cont (equal? (car arg) (cadr arg)))])]
+          [(atom?) (cond
+                     [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure atom?>" arg))]
+                     [else (apply-cont cont (atom? (car arg)))])]
+          [(length) (cond
+                      [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure length>" arg))]
+                      [(not (list? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s is not a proper list in #<primitive procedure length>" arg))]
+                      [else (apply-cont cont (length (car arg)))])]
+          [(list->vector) (cond
+                            [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure list-vector>" arg))]
+                            [(not (list? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s is not a proper list in #<primitive procedure list->vector>" arg))]
+                            [else (apply-cont cont (list->vector (car arg)))])]
+          [(list?) (cond
+                     [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure list?>" arg))]
+                     [else (apply-cont cont (list? (car arg)))])]
+          [(pair?) (cond
+                     [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure pair?>" arg))]
+                     [else (apply-cont cont (pair? (car arg)))])]
+          [(procedure?) (cond
+                          [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure procedure?>" arg))]
+                          [else (apply-cont cont (procedure? (car arg)))])]
+          [(vector->list) (cond
+                            [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure vector->list>" arg))]
+                            [(not (vector? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s is not a vector in #<primitive procedure vector->list>" arg))]
+                            [else (apply-cont cont (vector->list (car arg)))])]
+          [(vector) (apply-cont cont (apply vector arg))]
+          [(make-vector) (cond
+                           [(not (number? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s is not a number in #<primitive procedure make-vector>" (car arg)))]
+                           [(null? (cdr arg)) (make-vector (car arg))]
+                           [(not (null? (cddr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure make-vector>" arg))]
+                           [else (apply-cont cont (apply make-vector arg))])]
+          [(vector-ref) (cond
+                          [(or (not (null? (cddr arg))) (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure vector-ref>" arg))]
+                          [(not (vector? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s is not a vector in #<primitive procedure vector-ref>" (car arg)))]
+                          [(not (number? (cadr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s is not a number in #<primitive procedure vector-ref>" (cadr arg)))]
+                          [else (apply-cont cont (vector-ref (car arg) (cadr arg)))])]
+          [(vector?) (cond
+                       [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure vector?>" arg))]
+                       [else (apply-cont cont (vector? (car arg)))])]
+          [(number?) (cond
+                       [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure number?>" arg))]
+                       [else (apply-cont cont (number? (car arg)))])]
+          [(symbol?) (cond
+                       [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure symbol?>" arg))]
+                       [else (apply-cont cont (symbol? (car arg)))])]
+          [(set-car!) (cond
+                        [(or (not (null? (cddr arg))) (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure set-car!>" arg))]
+                        [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s is not a pair in #<primitive procedure set-car!>" (car arg)))]
+                        [else (apply-cont cont (set-car! (car arg) (cadr arg)))])]
+          [(set-cdr!) (cond
+                        [(or (not (null? (cddr arg))) (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure set-cdr!>" arg))]
+                        [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s is not a pair in #<primitive procedure set-cdr!>" (car arg)))]
+                        [else (apply-cont cont (set-cdr! (car arg) (cadr arg)))])]
+          [(vector-set!) (cond
+                           [(or (not (null? (cdddr arg))) (null? (cddr arg)) (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure set-car!>" arg))]
+                           [(not (vector? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s is not vector in #<primitive procedure vector-set!>" (car arg)))]
+                           [(not (number? (cadr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s is not a number in #<primitive procedure vector-set!>" (cadr arg)))]
+                           [else (apply-cont cont (vector-set! (car arg) (cadr arg) (caddr arg)))])]
+          [(car) (cond 
+                   [(and (atom? (car arg)) (null? (cdr arg))) (apply-cont cont (car arg))]
+                    ;(apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure car>" arg))]
+                   [(and (not (pair? (car arg))) (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure car>" arg))]
+                   [else (apply-cont cont (car (car arg)))])]
+          [(cdr) (cond 
+                   [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure cdr>" arg))]
+                   [(not (pair? (car arg))) (apply-cont cont (cdr arg))]
+                    ;(apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure cdr>" arg))]
+                   [else (apply-cont cont (cdr (car arg)))])]
+          [(caar) (cond 
+                    [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure caar>" arg))]
+                    [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure caar>" arg))]
+                    [(atom? (caar arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect list structure ~s in #<primitive procedure caar>" (car arg)))]
+                    [else (apply-cont cont (caar (car arg)))])]
+          [(cadr) (cond 
+                    [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure caar>" arg))]
+                    [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure caar>" arg))]
+                    [(atom? (cdar arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect list structure ~s in #<primitive procedure cadr>" (car arg)))]
+                    [else (apply-cont cont (cadr (car arg)))])]
+          [(cdar) (cond 
+                    [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure caar>" arg))]
+                    [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure caar>" arg))]
+                    [(atom? (caar arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect list structure ~s in #<primitive procedure cdar>" (car arg)))]
+                    [else (apply-cont cont (cdar (car arg)))])]
+          [(cddr) (cond 
+                    [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure caar>" arg))]
+                    [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure caar>" arg))]
+                    [(atom? (cdar arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect list structure ~s in #<primitive procedure cddr>" (car arg)))]
+                    [else (apply-cont cont (cddr (car arg)))])]
+          [(caaar) (cond 
+                     [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure caar>" arg))]
+                     [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure caar>" arg))]
+                     [(or (atom? (caar arg)) (atom? (caaar arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect list structure ~s in #<primitive procedure caaar>" (car arg)))]
+                     [else (apply-cont cont (caaar (car arg)))])]
+          [(caadr) (cond 
+                     [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure caar>" arg))]
+                     [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure caar>" arg))]
+                     [(or (atom? (cdar arg)) (atom? (cadar arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect list structure ~s in #<primitive procedure caadr>" (car arg)))]
+                     [else (apply-cont cont (caadr (car arg)))])]
+          [(cadar) (cond 
+                     [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure caar>" arg))]
+                     [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure caar>" arg))]
+                     [(or (atom? (caar arg)) (atom? (cdaar arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect list structure ~s in #<primitive procedure cadar>" (car arg)))]
+                     [else (apply-cont cont (cadar (car arg)))])]
+          [(cdaar) (cond 
+                     [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure caar>" arg))]
+                     [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure caar>" arg))]
+                     [(or (atom? (caar arg)) (atom? (caaar arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect list structure ~s in #<primitive procedure cdaar>" (car arg)))]
+                     [else (apply-cont cont (cdaar (car arg)))])]
+          [(cdddr) (cond 
+                     [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure caar>" arg))]
+                     [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure caar>" arg))]
+                     [(or (atom? (cdar arg)) (atom? (cddar arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect list structure ~s in #<primitive procedure cdddr>" (car arg)))]
+                     [else (apply-cont cont (cdddr (car arg)))])]
+          [(cddar) (cond 
+                     [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure caar>" arg))]
+                     [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure caar>" arg))]
+                     [(or (atom? (caar arg)) (atom? (cdaar arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect list structure ~s in #<primitive procedure cddar>" (car arg)))]
+                     [else (apply-cont cont (cddar (car arg)))])]
+          [(cdadr) (cond 
+                     [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure caar>" arg))]
+                     [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure caar>" arg))]
+                     [(or (atom? (cdar arg)) (atom? (cadar arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect list structure ~s in #<primitive procedure cdadr>" (car arg)))]
+                     [else (apply-cont cont (cdadr (car arg)))])]
+          [(caddr) (cond 
+                     [(not (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure caar>" arg))]
+                     [(not (pair? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a pair in #<primitive procedure caar>" arg))]
+                     [(or (atom? (cdar arg)) (atom? (cddar arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect list structure ~s in #<primitive procedure caddr>" (car arg)))]
+                     [else (apply-cont cont (caddr (car arg)))])]
+          [(map) (cond
+                   [(not (procedure? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a procedure #<primitive procedure map>" (car arg)))]
+                   [(null? (cadr arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc No list to map in #<primitive procedure map>"))]
+                   [else (map-cps (car arg) (cadr arg) cont)])]
+		   ;(apply-cont cont (map (lambda (args) (apply-proc (car arg) (list args) (halt-cont))) (cadr arg)))])]
+          [(apply) (cond
+                   [(not (procedure? (car arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a procedure #<primitive procedure apply>" (car arg)))]
+                   [(null? (cadr arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc No object to apply in #<primitive procedure spply>"))]
+                   [else (apply-cont cont (apply-proc (car arg) (combine-arg (cdr arg)) (halt-cont)))])]
+          [(assq) (cond
+                    [(or (not (null? (cddr arg))) (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure assq>" arg))]
+                    [(not (list? (cadr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a list in #<primitive procedure assq>" (cadr arg)))]
+                    [else (apply-cont cont (assq (car arg) (cadr arg)))])]
+          [(assv) (cond
+                    [(or (not (null? (cddr arg))) (null? (cdr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect argument count ~s in #<primitive procedure assv>" arg))]
+                    [(not (list? (cadr arg))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a list in #<primitive procedure assv>" (cadr arg)))]
+                    [else (apply-cont cont (assv (car arg) (cadr arg)))])]
+          [(append) (cond
+                      [(and (not (null? arg)) (not (list? (car arg)))) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a list #<primitive procedure append>" (car arg)))]
+                      [else (apply-cont cont (let f ([ls '()] [args arg])
+                              (if (null? args)
+                                  ls
+                                  (let g ([ls ls])
+                                    (if (null? ls)
+                                        (f (car args) (cdr args))
+                                        (cons (car ls) (g (cdr ls))))))))])]
+          [(max) (cond
+                   [(not (andmap number? arg)) (apply-cont (error-cont) (format "Error in apply-primitive-proc ~s not a number #<primitive procedure max>" arg))]
+                   [else (apply-cont cont (apply max arg))])]
+          [(exit) (apply-cont (halt-cont) (void))]          
+          [(break) (if (null? arg)
+                    	  (apply-cont (halt-cont) (void))
+                       (apply-cont (halt-cont) arg))]
+          [else (apply-cont (error-cont) (format "Error in apply-primitive-proc Incorrect primitive procedure ~s" id))]))))
+
+(define map-cps
+  (lambda (proc ls cont)
+    (if (null? ls)
+        (apply-cont cont '())
+        (apply-proc proc (list (car ls)) (map-cont proc (cdr ls) cont)))))
+                   
+(define combine-arg
+  (lambda (ls)
+    (cond 
+      [(null? ls) '()]
+      [(list? (car ls)) (append  (car ls) (combine-arg (cdr ls)))]
+      [else (append (list (car ls)) (combine-arg (cdr ls)))])))
+
+(define index-recur
+  (lambda (ls)
+    (if (null? (cdr ls)) 
+        (letrec ([loop (lambda (ls accum)
+                         (if (null? ls) accum
+                             (loop (cdr ls) (append accum (list (list (car ls)))))))])
+          (loop (car ls) '()))
+        (let ([size (- (length (car ls)) 1)])
+          (letrec ([index-recur-helper (lambda (count)
+                                        	(cond [(eq? count size) (list (index-value count ls))]
+                                        			[else (append (list (index-value count ls)) (index-recur-helper (+ count 1)))]))])
+            (index-recur-helper 0))))))
+                                                                           
+                                
+(define index-value
+  (lambda (index ls)
+    (letrec ([index-helper (lambda (index ls accum count)
+                             (cond 
+                               [(null? ls) accum]
+                               [(list? (car ls)) (index-helper index (cdr ls) (append accum (list (index-helper index (car ls) '() 0))) count)]
+                               [else (if (eq? index count)
+                                         (car ls)
+                                         (index-helper index (cdr ls) '() (+ count 1)))]))])
+      (index-helper index ls '() 0))))
+
+
+(define primitive-proc
+  (list '+ '- '* '/ 'add1 'sub1 'max
+    'zero? 'not '= '< '> '<= '>= 
+    'cons 'list 'null? 'eq? 'equal? 
+    'atom? 'length 'list->vector 'list?
+    'pair? 'procedure? 'vector->list 'vector 
+    'make-vector 'vector-ref 'vector? 'number? 
+    'symbol? 'set-car! 'set-cdr! 'vector-set! 'exit 'break
+    'car 'cdr 'caar 'cadr 'cdar 'cddr 'caaar 
+    'caadr 'cadar 'cdaar 'cdddr 'cddar 'cdadr 'caddr 'map 'apply 'assq 'assv 'append))
+
+(define global-env
+  (map (lambda (name)	(cons name (list (primitive name)))) primitive-proc))
+
+(define reset-global-env
+  (lambda ()
+    (set! global-env (map (lambda (name)	(cons name (list (primitive name)))) primitive-proc))))
+	
+(define extend-env-recur
+  (lambda (syms vals env cont)
+    (let* ([vec (list->vector vals)]
+	   [new-env (cons (cons syms vec) env)])
+      (for-each (lambda (item pos)
+		  (if (procedure? item)
+		      (vector-set! vec
+				   pos
+				   (cases procedure item
+					  [closure-record (ids bodies toss-env)
+						   (closure-record ids bodies new-env)]
+					  [primitive (id)
+						     item]
+                                          [else item]))))
+		vals
+		(make-indices (- (length vals) 1) '()))
+      (apply-cont cont new-env))))

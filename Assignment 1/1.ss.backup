@@ -1,0 +1,68 @@
+;;Dharmin Shah 1
+
+(define length
+  (lambda (ls)
+    (if (null? ls)
+        0
+        (+ (length (cdr ls)) 1))))
+
+;;Problem 1
+(define last
+  (lambda (x)
+    (if (= (length x) 1)
+	(car x)
+	(last (cdr x)))))
+			
+			
+;;Problem 2
+(define all-but-last
+  (lambda (x)
+    (cond
+      [(= (length x) 1) '()]
+      [(= (length x) 2) (cons (car x) '())]
+      [else	(cons (car x) (all-but-last(cdr x)))])))
+
+;;Problem 3
+(define replace
+  (lambda (old new ls)
+    (cond
+      [(null? ls) '()]
+      [(eqv? (car ls) old) (cons new (replace old new (cdr ls)))]
+      [else (cons (car ls) (replace old new (cdr ls)))])))
+      
+
+;;Problem 4
+(define remove-first
+  (lambda (x ls)
+    (cond
+      [(null? ls) '()]
+      [(eqv? (car ls) x) (cdr ls)]
+      [else (cons (car ls) (remove-first x (cdr ls)))])))
+
+;;Problem 5
+(define remove-last
+  (lambda (x ls)
+    (cond
+      [(null? ls) '()]
+      [(eqv? (last ls) x) (all-but-last ls)]
+      [else (append (remove-last x (all-but-last ls)) (cons (last ls) '()))])))
+
+;;Problem 6
+(define interval-contains?
+  (lambda (intvl n)
+    (if (>= n (car intvl))
+        (if (<= n (cadr intvl))
+            #t
+            #f)
+        #f)))
+
+;;Problem 7
+(define interval-intersects?
+  (lambda (i1 i2)
+    (cond
+      [(and (<= (car i1) (car (cdr i2))) (>= (car i1) (car i2))) #t]
+      [(and (<= (car (cdr i1)) (car (cdr i2))) (>= (car (cdr i1)) (car i2))) #t]
+      [(and (<= (car i2) (car (cdr i1))) (>= (car i2) (car i1))) #t]
+      [(and (<= (car (cdr i2)) (car (cdr i1))) (>= (car (cdr i2)) (car i1))) #t]
+      [else #f]
+      )))

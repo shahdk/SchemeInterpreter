@@ -1,0 +1,16 @@
+;;Dharmin Shah 1
+
+;;Problem 1
+(define last
+	(lambda (x)
+		(if (= (length x) 1)
+			(car x)
+			
+			
+;;Problem 2
+
+;;Problem 3
+
+;;Problem 4
+
+;;Problem 5

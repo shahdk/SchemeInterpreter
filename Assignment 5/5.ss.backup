@@ -1,0 +1,123 @@
+;;Dharmin Shah 5
+
+(define (rl) (begin (load "5.ss") (load "5-test.ss")))
+
+;;Problem 1
+(define connected?
+  (lambda (ls)
+    (let ([vertices (get-vertex ls)]
+          [edges (get-edges ls)])
+      (cond
+        [(null? vertices) #t]
+        [(null? (cdr vertices)) #t]
+        [else (if (>= (count-elements edges) (* (- (count-elements vertices) 1) 2))
+                  #t
+                  #f)]))))
+
+(define get-edges
+  (lambda (ls)
+    (cond
+      [(null? ls) '()]
+      [else (append (cdar ls) (get-edges (cdr ls)))])))
+
+(define count-elements
+  (lambda (ls)
+    (cond
+      [(null? ls) 0]
+      [(null? (car ls)) 0]
+      [(atom? (car ls)) (+ 1 (count-elements (cdr ls)))]
+      [else (+ (count-elements (car ls)) (count-elements (cdr ls)))])))
+
+(define contains?
+  (lambda (el ls)
+    (cond
+      [(null? ls) #f]
+      [(equal? el (car ls)) #t]
+      [else (contains? el (cdr ls))])))
+      
+
+(define get-vertex
+  (lambda (ls)
+    (cond
+      [(null? ls) '()]
+      [else (append (list (caar ls)) (get-vertex (cdr ls)))])))
+
+(define get-edges-for-vertex
+  (lambda (vertex ls)
+    (cond
+      [(null? ls) '()]
+      [(equal? (caar ls) vertex) (cadar ls)]
+      [else (get-edges-for-vertex vertex (cdr ls))])))
+
+;;Problem 2
+(define make-slist-leaf-iterator
+  (lambda (ls)
+    (let* ([stack (make-stack)]
+          [temp (stack 'push ls)])
+      (lambda ()
+        (if stack
+            (let loop ([node (stack 'pop)])
+              (if (pair? node)
+                  (begin (stack 'push (cdr node)) (loop (car node)))
+                  (if (null? node)
+                      (loop (stack 'pop))
+                      node)))
+            '())))))
+
+(define make-stack
+    (lambda ()
+      (let ([stack '()])
+        (lambda (proc . args)
+          (case proc
+            [(empty?) (null? stack)]
+            [(push) (set! stack (cons (car args) stack))]
+            [(pop) (if (null? stack)
+                       #f
+                      (let ([top (car stack)])
+                       (set! stack (cdr stack))
+                       top))]
+            [(peek) (if (null? stack)
+                        #f
+                        (car stack))]
+            [(getstack) (if (null? stack)
+                        '()
+                        stack)]
+            [else (error 'stack "illegal message to stack object: ~a" proc)])))))
+
+;;Problem 3
+(define subst-leftmost
+  (lambda (new old ls proc)
+    (cond
+      [(null? ls) '()]
+      [(atom? (car ls)) (if (proc old (car ls))
+                              (cons new (cdr ls))
+                              (cons (car ls) (subst-leftmost new old (cdr ls) proc)))]
+      [(pair? old) (if (proc (car ls) old) (cons new (cdr ls)))]
+      [(contains-helper (car ls) '() old) 
+       (if (pair? old)
+           (if (proc (car ls) old)
+               (cons new (cdr ls)))
+           (cons (subst-leftmost new old (car ls) proc) (cdr ls)))]
+      [else (if (pair? old)
+                (if (proc (cdr ls) old)
+                    (cons (car ls) new))
+                (cons (car ls) (subst-leftmost new old (cdr ls) proc)))])))
+
+(define contains-helper
+  (lambda (ls rest accu)
+    (cond
+      [(null? ls)  #f]
+      [(null? (car ls)) (contains-helper (cdr ls) rest accu)]
+      [(atom? (car ls))
+       (if (equal? (car ls) accu)
+           #t
+           (if (null? (cdr ls))
+               (contains-helper rest '() accu)
+               (contains-helper (cdr ls) rest accu)))]
+      [(null? (cdr ls)) 
+       (if (equal? (car ls) accu) 
+           #t
+           (contains-helper (car ls) rest accu))]
+      [else (if (equal? (car ls) accu) 
+                #t
+                (contains-helper (car ls) (cons (cdr ls) rest) accu))])))

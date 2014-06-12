@@ -1,0 +1,147 @@
+(define rl
+  (lambda () (load "2.ss")))
+
+(load "2-test.ss")      
+
+
+
+
+
+
+
+
+
+
+
+
+
+[(list? (car ls)) (cons (remove-left-most n (car ls)) (cdr ls))]
+      [(= n (car ls)) (cdr ls)]
+      [else (cons (car ls) (remove-left-most n (cdr ls)))])))
+
+(define remove-left-most
+  (lambda (n ls)
+    (cond
+      [(null? ls) '()]
+      [(number? (car ls)) (if (= n (car ls))
+                              (cdr ls)
+                              (cons (car ls) (remove-left-most n (cdr ls))))]
+      [(contains n (car ls)) (cons (remove-left-most n (car ls)) (cdr ls))]
+      [else (cons (car ls) (remove-left-most n (cdr ls)))])))
+
+
+(define flatten
+  (lambda (ls)
+    (cond
+      [(null? ls) '()]
+      [(number? ls) (flatten (cons ls '()))]
+      [(list? (car ls)) (append (flatten (car ls)) (flatten (cdr ls)))]
+      [else (cons (car ls) (flatten (cdr ls)))])))
+
+(define reverse
+  (lambda (ls)
+    (reverse-helper ls '())))
+
+(define reverse-helper
+  (lambda (ls accu)
+    (cond
+      [(null? ls) accu]
+      [(pair? (car ls)) (reverse-helper (cdr ls) (cons (reverse (car ls)) accu))]
+      [else (reverse-helper (cdr ls) (cons (car ls) accu))])))
+
+;;(define remove-left-most
+;;  (lambda (n ls)
+;;    (cond
+;;      [(null? ls) '()]
+;;      [(atom? (car ls)) (if (= n (car ls))
+;;                              (cdr ls)
+;;                              (cons (car ls) (remove-left-most n (cdr ls))))]
+;;      [(if(remove-left-helper n (car ls))) (cons (remove-left-most n (car ls)) (cdr ls))]
+;;      [else (cons (car ls) (remove-left-most n (cdr ls)))])))
+
+;;(define remove-left-helper
+;;  (lambda (n ls)
+;;(define remove-left-most
+;;  (lambda (n ls)
+;;    (cond
+;;      [(null? ls) '()]
+;;      [(number? (car ls)) (if (= n (car ls))
+;;                              (cdr ls)
+;;                              (cons (car ls) (remove-left-most n (cdr ls))))]
+;;      [else (cons (remove-left-most n (car ls)) (cdr ls))])))
+
+(define remove-right-most
+  (lambda (e ls)
+    (remove-right-helper e ls '() '())))
+
+(define remove-right-helper  
+  (lambda (e ls current backup)
+    (cond 
+      [(null? ls) current]
+      [(pair? (car ls)) (cons (remove-right-helper e (car ls) current backup) (cdr ls))]
+      [(eq? e (car ls))
+       (remove-right-helper e (cdr ls) backup (append backup (list (car ls))))]
+      [else (remove-right-helper e (cdr ls)
+              (if (null? current)
+                  (cons (car ls) current)
+                  (append current (car ls)))
+               (if (null? backup)
+                   (cons (car ls) backup)
+                   (append backup (car ls))))])))
+
+(define largest-helper
+  (lambda (ls accu)
+    (cond
+      [(null? ls)  accu]
+      [(pair? (car ls)) (largest-helper (car ls) accu)]
+      [(atom? (car ls))
+       (if (> (car ls) accu)
+           (largest-helper (cdr ls) (car ls))
+           (largest-helper (cdr ls) accu))]
+      [(null? (cdr ls)) (largest-helper (car ls) accu)]
+      [else (largest-helper (cdr ls) accu)])))
+
+(define remove-left-most
+  (lambda (el ls)
+    (cond
+      [(null? ls) '()]
+      [else (remove-left-helper el ls '() '())])))
+
+(define remove-left-helper
+  (lambda (el ls rest accu)
+    (cond
+      [(null? ls)  accu]
+      [(null? (car ls)) (remove-helper el (cdr ls) rest accu)]
+      [(atom? (car ls))
+       (if (equal? (car ls) el)
+           (if (null? (cdr ls))
+               (remove-left-helper rest '() (append accu (list (car ls))))
+               (remove-left-helper (cdr ls) rest (append accu (list (car ls)))))
+           (if (null? (cdr ls))
+               (remove-left-helper el rest '() (append accu (car ls)))
+               (remove-left-helper el (cdr ls) rest (list accu (car ls)))))]
+      [else (remove-left-helper el (car ls) (append (cdr ls) rest) accu)])))
+
+
+(define remove-left-most
+  (lambda (el ls)
+    (cond
+      [(null? ls) '()]
+      [else (remove-left-helper el ls '() '())])))
+
+(define remove-left-helper
+  (lambda (el ls rest accu)
+    (cond
+      [(null? ls)  accu]
+      [(null? (car ls)) (remove-left-helper el (cdr ls) rest (list accu '()))]
+      [(atom? (car ls))
+       (if (equal? (car ls) el)
+           (if (null? rest) 
+            (list accu (cdr ls))
+            (list accu rest))
+           (if (null? (cdr ls))
+               (remove-left-helper el rest '() (list accu (car ls)))
+               (remove-left-helper el (cdr ls) rest (append accu (list(car ls))))))]
+      [else (remove-left-helper el (car ls) (if (null? (cdr ls))
+                                                rest
+                                                (append (cdr ls) rest)) accu)])))

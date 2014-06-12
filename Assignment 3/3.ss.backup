@@ -1,0 +1,218 @@
+;;Dharmin Shah 3
+
+;;Problem 1
+(define rotate
+  (lambda (ls)
+    (letrec ([rotate (lambda (ls accu)
+                      (cond
+                        [(null? ls) '()]
+                        [(null? (cdr ls)) (append (list (car ls)) accu)]
+                        [else (rotate (cdr ls) (append accu (list (car ls))))]))])
+      (rotate ls '()))))
+
+
+;;Problem 2
+(define make-list-c
+  (lambda (n)
+    (lambda (ls)
+      (letrec ([make-list-c (lambda (ls n)
+                            (cond
+                              [(zero? n) '()]
+                              [else (cons ls (make-list-c  ls (- n 1)))]))])
+        (make-list-c ls n)))))
+
+;;Problem 3
+(define filter-out
+  (lambda (n)
+    (lambda (ls)
+      (letrec ([filter-out (lambda (n ls)
+                 (cond
+                   [(null? ls) '()]
+                   [(n (car ls)) (filter-out n (cdr ls))]
+                   [else (append (list (car ls)) (filter-out n (cdr ls)))]))])
+        (filter-out n ls )))))
+
+;;Problem 4
+(define substitute-all-m
+  (lambda (old new)
+      (lambda (ls)
+        (letrec ([sub-all-m (lambda (old new ls)
+                                     (if (atom? ls)
+                                         (if (equal? old ls) new ls)
+                                         (if (equal? old (car ls)) 
+                                             (cons new (sub-all-m old new (cdr ls))) 
+                                             (cons (sub-all-m old new (car ls)) (sub-all-m old new (cdr ls))))))])
+          (sub-all-m old new ls)))))
+
+;;Problem 5
+(define pascal-triangle
+  (lambda (n)
+    (triangle-helper '(1) (+ n 1))))
+
+(define triangle-helper
+  (lambda (row n)
+    (cond
+      [(zero? n) '()]
+      [(< n 0) '()]
+      [else (append (triangle-helper (next-row row) (- n 1)) (list row))])))
+             
+(define next-row
+  (lambda (ls)
+    (map + (cons 0 ls) (append ls '(0)))))
+
+;;Problem 6
+(define minimize-interval-list
+  (lambda (ls)
+    (cond
+      [(null? ls) '()]
+      [(null? (cdr ls)) (list (car ls))]
+      [else (car (min-int-ls-helper (car ls) (cdr ls)))])))
+
+(define min-int-ls-helper
+  (lambda (i1 i2)
+    (cond
+      [(null? i2) (list i1)]
+      [(null? i1) (list i2)]
+      [else  (let ([x (interval-union i1 (car i2))])
+              (min-int-ls-helper x (cdr i2)))])))
+      
+(define interval-union
+  (lambda (i1 i2)
+    (cond
+      [(null? (cdr i1)) (interval-union (car i1) i2)]
+      [(null? (cdr i2)) (interval-union i1 (car i2))]
+      [(pair? (car i1)) (if (interval-intersects? (car i1) i2)
+                            (list (car (interval-union (car i1) i2)) (cdr i1))
+                            (append (list (car i1)) (let ([ls (interval-union (cdr i1) i2)])
+                                             (if (null? (cdr ls))
+                                                 (list (car ls))
+                                                 ls))))]
+      [(wraps i1 i2) (list i1)]
+      [(wraps i2 i1) (list i2)]
+      [(int-left i1 i2) (list (list (car i1) (cadr i2)))]
+      [(int-left i2 i1) (list (list (car i2) (cadr i1)))]
+      [else (if (< (car i1) (car i2))
+                (list i1 i2)
+                (list i2 i1))])))
+
+(define wraps
+  (lambda (i1 i2)
+    (and
+      (if (>= (car i2) (car i1))
+           (if (<= (car i2) (cadr i1))
+               #t
+               #f)
+          #f)
+      (if (>= (cadr i2) (car i1))
+          (if (<= (cadr i2) (cadr i1))
+              #t
+              #f)
+          #f))))
+
+(define int-left
+  (lambda (i1 i2)
+    (if (<= (car i1) (car i2))
+        (and (>= (cadr i1) (car i2)) (<= (cadr i1) (cadr i2)))
+        #f)))
+
+(define interval-intersects?
+  (lambda (i1 i2)
+    (cond
+      [(and (<= (car i1) (car (cdr i2))) (>= (car i1) (car i2))) #t]
+      [(and (<= (car (cdr i1)) (car (cdr i2))) (>= (car (cdr i1)) (car i2))) #t]
+      [(and (<= (car i2) (car (cdr i1))) (>= (car i2) (car i1))) #t]
+      [(and (<= (car (cdr i2)) (car (cdr i1))) (>= (car (cdr i2)) (car i1))) #t]
+      [else #f]
+      )))
+
+
+;;Problem 7
+(define complete
+  (lambda (ls)
+    (cond
+      [(null? ls) '()]
+      [(null? (cdr ls)) (list (list (car ls) '()))]
+      [else (complete-helper ls '() '())])))
+
+(define complete-helper
+  (lambda (ls ac1 ac2)
+    (cond
+      [(null? ls) ac1]
+      [else (complete-helper (cdr ls) (append ac1 (list (list (car ls) (append ac2 (cdr ls))))) (append ac2 (list (car ls))))])))
+         
+
+;;Problem 8
+(define complete?
+  (lambda (ls)
+    (cond
+      [(null? ls) #t]
+      [(null? (cadar ls)) #t]
+      [(complete?-helper ls) #t]
+      [else #f])))
+
+
+(define complete?-helper
+  (lambda (ls)
+    (let ([list-vertex (get-vertex ls)]
+          [list-edges (get-edges ls)])
+      (if (graph-equal? list-vertex list-edges '())
+          #t
+          #f))))
+
+(define get-vertex
+  (lambda (ls)
+    (cond
+      [(null? ls) '()]
+      [else (append (list (caar ls)) (get-vertex (cdr ls)))])))
+
+(define get-edges
+  (lambda (ls)
+    (cond
+      [(null? ls) '()]
+      [else (append (cdar ls) (get-edges (cdr ls)))])))
+
+(define graph-equal?
+  (lambda (vertex edges accu)
+    (cond
+      [(null? vertex) '()]
+      [(and 
+            (contain? (append (cdr vertex) accu) (car edges)) 
+            (contain? (car edges) (append (cdr vertex) accu))) 
+       (graph-equal? (cdr vertex) (cdr edges) (append accu (list (car vertex))))]
+      [else #f])))
+
+
+(define contain?
+  (lambda (s1 s2)
+    (cond
+      [(null? s1) #t]
+      [(contains? (car s1) s2) (contain? (cdr s1) s2)]
+      [else #f])))
+
+
+(define contains?
+  (lambda (el ls)
+    (cond
+      [(null? ls) #f]
+      [(equal? el (car ls)) #t]
+      [else (contains? el (cdr ls))])))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

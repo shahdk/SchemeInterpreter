@@ -1,0 +1,156 @@
+Chez Scheme Transcript [Tue May 14 12:45:11 2013]
+> (rep)
+--> (case 'var-exp
+	('var-exp (+ 3 4))
+	(else #f))
+|(eval-expression
+   (app-exp
+     (var-exp case)
+     ((app-exp (var-exp quote) ((var-exp var-exp)))
+       (app-exp
+         (app-exp (var-exp quote) ((var-exp var-exp)))
+         ((app-exp (var-exp +) ((lit-exp 3) (lit-exp 4)))))
+       (app-exp (var-exp else) ((lit-exp #f)))))
+   ())
+| (eval-expression (var-exp case) ())
+| #f
+|(eval-expression
+   (if-exp
+     (app-exp
+       (lambda-exp
+         (sys-var tempVal)
+         (if-exp
+           (var-exp (sys-var tempVal))
+           (var-exp (sys-var tempVal))
+           (app-exp (var-exp equal?) ((var-exp var-exp) (lit-exp var-exp)))))
+       ((app-exp (var-exp equal?) ((var-exp quote) (lit-exp var-exp)))))
+     (app-exp (var-exp +) ((lit-exp 3) (lit-exp 4)))
+     (if-exp
+       (app-exp (var-exp equal?) ((lit-exp var-exp) (lit-exp var-exp)))
+       (lit-exp #f)
+       (null-exp)))
+   ())
+| (eval-expression
+    (app-exp
+      (lambda-exp
+        (sys-var tempVal)
+        (if-exp
+          (var-exp (sys-var tempVal))
+          (var-exp (sys-var tempVal))
+          (app-exp (var-exp equal?) ((var-exp var-exp) (lit-exp var-exp)))))
+      ((app-exp (var-exp equal?) ((var-exp quote) (lit-exp var-exp)))))
+    ())
+| |(eval-expression
+     (lambda-exp
+       (sys-var tempVal)
+       (if-exp
+         (var-exp (sys-var tempVal))
+         (var-exp (sys-var tempVal))
+         (app-exp (var-exp equal?) ((var-exp var-exp) (lit-exp var-exp)))))
+     ())
+| |(closure-record
+     (sys-var tempVal)
+     (if-exp
+       (var-exp (sys-var tempVal))
+       (var-exp (sys-var tempVal))
+       (app-exp (var-exp equal?) ((var-exp var-exp) (lit-exp var-exp))))
+     ())
+| |(eval-expression
+     (app-exp (var-exp equal?) ((var-exp quote) (lit-exp var-exp)))
+     ())
+| | (eval-expression (var-exp equal?) ())
+| | (primitive equal?)
+| | (eval-expression (lit-exp var-exp) ())
+| | var-exp
+| | (eval-expression (var-exp quote) ())
+| | #f
+| |(apply-proc (primitive equal?) (#f var-exp) ())
+| |(apply-primitive-proc equal? (#f var-exp))
+| |#f
+| (apply-proc
+    (closure-record
+      (sys-var tempVal)
+      (if-exp
+        (var-exp (sys-var tempVal))
+        (var-exp (sys-var tempVal))
+        (app-exp (var-exp equal?) ((var-exp var-exp) (lit-exp var-exp))))
+      ())
+    (#f)
+    ())
+| (eval-expression
+    (if-exp
+      (var-exp (sys-var tempVal))
+      (var-exp (sys-var tempVal))
+      (app-exp (var-exp equal?) ((var-exp var-exp) (lit-exp var-exp))))
+    (((sys-var tempVal) . #(#f))))
+| |(eval-expression (var-exp (sys-var tempVal)) (((sys-var tempVal) . #(#f))))
+| |#f
+| (eval-expression
+    (app-exp (var-exp equal?) ((var-exp var-exp) (lit-exp var-exp)))
+    (((sys-var tempVal) . #(#f))))
+| |(eval-expression (var-exp equal?) (((sys-var tempVal) . #(#f))))
+| |(primitive equal?)
+| |(eval-expression (lit-exp var-exp) (((sys-var tempVal) . #(#f))))
+| |var-exp
+| |(eval-expression (var-exp var-exp) (((sys-var tempVal) . #(#f))))
+| |#f
+| (apply-proc (primitive equal?) (#f var-exp) (((sys-var tempVal) . #(#f))))
+| (apply-primitive-proc equal? (#f var-exp))
+| #f
+|(eval-expression
+   (if-exp
+     (app-exp (var-exp equal?) ((lit-exp var-exp) (lit-exp var-exp)))
+     (lit-exp #f)
+     (null-exp))
+   ())
+| (eval-expression
+    (app-exp (var-exp equal?) ((lit-exp var-exp) (lit-exp var-exp)))
+    ())
+| |(eval-expression (var-exp equal?) ())
+| |(primitive equal?)
+| |(eval-expression (lit-exp var-exp) ())
+| |var-exp
+| |(eval-expression (lit-exp var-exp) ())
+| |var-exp
+| (apply-proc (primitive equal?) (var-exp var-exp) ())
+| (apply-primitive-proc equal? (var-exp var-exp))
+| #t
+|(eval-expression (lit-exp #f) ())
+|#f
+#f
+--> (exit)
+
+> (trace parse-expression)
+(parse-expression)
+> (parse-expression '(case 'var-exp
+      ('var-exp (+ 3 4))
+      (else #f)))
+|(parse-expression (case 'var-exp [(quote var-exp) (+ 3 4)] [else #f]))
+| (parse-expression 'var-exp)
+| (lit-exp var-exp)
+| (parse-expression #f)
+| (lit-exp #f)
+| (parse-expression 'var-exp)
+| (lit-exp var-exp)
+| (parse-expression (+ 3 4))
+| |(parse-expression +)
+| |(var-exp +)
+| |(parse-expression 4)
+| |(lit-exp 4)
+| |(parse-expression 3)
+| |(lit-exp 3)
+| (app-exp (var-exp +) ((lit-exp 3) (lit-exp 4)))
+| (parse-expression var-exp)
+| (var-exp var-exp)
+| (parse-expression quote)
+| (var-exp quote)
+|(case-exp
+   (lit-exp var-exp)
+   ((((var-exp quote) (var-exp var-exp))
+      (app-exp (var-exp +) ((lit-exp 3) (lit-exp 4))))
+     (((lit-exp var-exp)) (lit-exp #f))))
+(case-exp
+  (lit-exp var-exp)
+  ((((var-exp quote) (var-exp var-exp))
+     (app-exp (var-exp +) ((lit-exp 3) (lit-exp 4))))
+    (((lit-exp var-exp)) (lit-exp #f))))
